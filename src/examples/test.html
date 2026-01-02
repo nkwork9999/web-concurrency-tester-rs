@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Race Condition Test Suite v3 (Research-Based)</title>
+    <style>
+      .test-section {
+        margin: 20px 0;
+        padding: 10px;
+        border: 1px solid #ccc;
+      }
+      .error {
+        color: red;
+      }
+      .success {
+        color: green;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Race Condition Test Suite</h1>
+    <p>
+      Based on: InitRacer, EventRacer, NodeRacer, PortSwigger Research (2023)
+    </p>
+
+    <!-- 基本UI -->
+    <div class="test-section">
+      <h2>Basic UI</h2>
+      <input id="input" type="text" oninput="handleInput()" />
+      <button id="btn" onclick="handleClick()">Click</button>
+      <button id="inc" onclick="inc()">+</button>
+      <button id="dec" onclick="dec()">-</button>
+      <button id="dis" disabled>Disabled</button>
+      <span id="count">0</span>
+    </div>
+
+    <!-- 検索UI -->
+    <div class="test-section">
+      <h2>Search (Typeahead Race)</h2>
+      <input
+        id="search"
+        type="text"
+        placeholder="Search..."
+        oninput="handleSearch()"
+      />
+      <div id="results"></div>
+    </div>
+
+    <!-- フォーム -->
+    <div class="test-section">
+      <h2>Form (Input Overwrite Race)</h2>
+      <form id="form" onsubmit="return handleSubmit()">
+        <input id="username" type="text" value="" placeholder="Username" />
+        <input id="email" type="email" value="" placeholder="Email" />
+        <button type="submit">Submit</button>
+      </form>
+      <div id="formStatus"></div>
+    </div>
+
+    <script>
+      // ============================================================
+      // Category 1: TOCTOU (Time-of-Check to Time-of-Use)
+      // Based on: Classic race condition pattern
+      // ============================================================
+
+      let count = 0;
+
+      function inc() {
+        count = count + 1;
+        updateDisplay();
+      }
+      function dec() {
+        if (count > 0) count = count - 1;
+        updateDisplay();
+      }
+
+      // VULNERABLE: TOCTOU race
+      async function asyncInc() {
+        const v = count; // CHECK: read current value
+        await delay(10); // WINDOW: async gap
+        count = v + 1; // USE: write based on stale value
+        updateDisplay();
+      }
+
+      async function asyncDec() {
+        const v = count;
+        await delay(10);
+        if (v > 0) {
+          count = v - 1; // RACE: may go negative with concurrent calls
+        }
+        updateDisplay();
+      }
+
+      function updateDisplay() {
+        const elem = document.getElementById("count");
+        if (elem) elem.textContent = count;
+      }
+
+      function delay(ms) {
+        return new Promise((r) => setTimeout(r, ms));
+      }
+
+      // ============================================================
+      // Category 2: Limit Overrun (PortSwigger 2023)
+      // Based on: "Smashing the state machine" research
+      // ============================================================
+
+      let balance = 1000;
+      let promoUsed = false;
+
+      // VULNERABLE: Double-spend / limit overrun
+      async function withdraw(amount) {
+        if (balance >= amount) {
+          // CHECK
+          await delay(50); // WINDOW: processing delay
+          balance = balance - amount; // USE
+          return { success: true, newBalance: balance };
+        }
+        return { success: false, reason: "Insufficient funds" };
+      }
+
+      // VULNERABLE: Promo code race (one-time use bypass)
+      async function applyPromoCode(code) {
+        if (!promoUsed && code === "DISCOUNT20") {
+          // CHECK
+          await delay(30); // WINDOW
+          promoUsed = true; // USE
+          return { discount: 20 };
+        }
+        return { discount: 0, reason: "Already used or invalid" };
+      }
+
+      // ============================================================
+      // Category 3: Stale Response (Typeahead Race)
+      // Based on: Common UI race condition
+      // ============================================================
+
+      let latestSearchId = 0;
+
+      // VULNERABLE: Stale response displayed
+      async function handleSearch() {
+        const query = document.getElementById("search").value;
+        const requestId = ++latestSearchId;
+
+        const results = await fakeSearchAPI(query);
+
+        // BUG: Should check if (requestId !== latestSearchId) return;
+        document.getElementById("results").innerHTML = results;
+      }
+
+      // FIXED version
+      async function handleSearchFixed() {
+        const query = document.getElementById("search").value;
+        const requestId = ++latestSearchId;
+
+        const results = await fakeSearchAPI(query);
+
+        // FIXED: Discard stale responses
+        if (requestId !== latestSearchId) {
+          console.log("Discarding stale response for:", query);
+          return;
+        }
+
+        document.getElementById("results").innerHTML = results;
+      }
+
+      async function fakeSearchAPI(query) {
+        // Random delay simulates network latency variability
+        await delay(Math.random() * 200 + 50);
+        return "Results for: " + query + " (id: " + latestSearchId + ")";
+      }
+
+      // ============================================================
+      // Category 4: Form Input Overwrite (InitRacer Pattern P1)
+      // Based on: InitRacer paper - form-input-overwritten errors
+      // ============================================================
+
+      let formInitialized = false;
+
+      // VULNERABLE: Script overwrites user input during initialization
+      async function initializeForm() {
+        await delay(100); // Simulates slow script load
+
+        // BUG: Overwrites any input user already typed
+        const username = document.getElementById("username");
+        if (username && !username.value) {
+          // Only if empty (partial fix)
+          username.value = "default_user";
+        }
+
+        formInitialized = true;
+      }
+
+      // ============================================================
+      // Category 5: Late Event Handler Registration (InitRacer Pattern P2)
+      // Based on: InitRacer paper - late-event-handler-registration errors
+      // ============================================================
+
+      let clickHandler = null;
+
+      // VULNERABLE: Handler registered after user might click
+      async function setupClickHandler() {
+        await delay(200); // Slow script loading
+
+        clickHandler = function () {
+          console.log("Handler executed!");
+          return true;
+        };
+
+        // Problem: User might click before this completes
+      }
+
+      function handleClick() {
+        if (clickHandler) {
+          return clickHandler();
+        } else {
+          console.log("Click ignored - handler not ready");
+          return false;
+        }
+      }
+
+      // ============================================================
+      // Category 6: Access Before Definition (InitRacer Pattern P3)
+      // Based on: InitRacer paper - access-before-definition errors
+      // ============================================================
+
+      let sharedLib = null;
+
+      // VULNERABLE: Using library before it's loaded
+      async function useLibrary() {
+        // BUG: sharedLib might not be defined yet
+        if (sharedLib && sharedLib.doSomething) {
+          return sharedLib.doSomething();
+        }
+        throw new Error("Library not loaded");
+      }
+
+      async function loadLibrary() {
+        await delay(150);
+        sharedLib = {
+          doSomething: function () {
+            return "Library result";
+          },
+          version: "1.0.0",
+        };
+      }
+
+      // ============================================================
+      // Category 7: Promise.all Parallel Race
+      // Based on: Common async anti-pattern
+      // ============================================================
+
+      async function unsafeParallelIncrement(n) {
+        const promises = [];
+        for (let i = 0; i < n; i++) {
+          promises.push(asyncInc());
+        }
+        await Promise.all(promises);
+        // Expected: count += n
+        // Actual: count += 1 (all read same initial value)
+        return count;
+      }
+
+      async function safeSequentialIncrement(n) {
+        for (let i = 0; i < n; i++) {
+          await asyncInc();
+        }
+        return count;
+      }
+
+      // ============================================================
+      // Category 8: LocalStorage Race (Multi-Tab)
+      // Based on: Real-world storage race conditions
+      // ============================================================
+
+      const STORAGE_KEY = "app_counter";
+
+      async function incrementStorage() {
+        const current = parseInt(localStorage.getItem(STORAGE_KEY) || "0");
+        await delay(10); // WINDOW
+        localStorage.setItem(STORAGE_KEY, String(current + 1)); // RACE
+        return current + 1;
+      }
+
+      // Listen for storage changes from other tabs
+      window.addEventListener("storage", function (e) {
+        if (e.key === STORAGE_KEY) {
+          console.log(
+            "Storage changed by another tab:",
+            e.oldValue,
+            "->",
+            e.newValue
+          );
+        }
+      });
+
+      // ============================================================
+      // Category 9: DOM Mutation Race
+      // Based on: EventRacer DOM race patterns
+      // ============================================================
+
+      async function unsafeDOMUpdate() {
+        const elem = document.getElementById("count");
+        const current = parseInt(elem.textContent || "0");
+        await delay(10);
+        elem.textContent = String(current + 1); // RACE with other updates
+      }
+
+      // ============================================================
+      // Category 10: Optimistic Locking / Version Check
+      // Based on: Database concurrency patterns
+      // ============================================================
+
+      let sharedState = { value: 0, version: 0 };
+
+      async function optimisticUpdate(newValue) {
+        const startVersion = sharedState.version;
+        await delay(20); // Simulate processing
+
+        if (sharedState.version !== startVersion) {
+          throw new Error("Optimistic lock failed - concurrent modification");
+        }
+
+        sharedState.value = newValue;
+        sharedState.version++;
+        return sharedState;
+      }
+
+      // ============================================================
+      // Category 11: Mutex / Semaphore Pattern (Fix)
+      // Based on: Proper synchronization
+      // ============================================================
+
+      let mutex = Promise.resolve();
+
+      async function withMutex(fn) {
+        const release = mutex;
+        let resolveNew;
+        mutex = new Promise(function (resolve) {
+          resolveNew = resolve;
+        });
+        await release;
+        try {
+          return await fn();
+        } finally {
+          resolveNew();
+        }
+      }
+
+      async function safeAsyncInc() {
+        return withMutex(async function () {
+          const v = count;
+          await delay(10);
+          count = v + 1;
+          updateDisplay();
+          return count;
+        });
+      }
+
+      // ============================================================
+      // Category 12: AbortController Pattern (Fix for fetch races)
+      // Based on: Modern fetch cancellation
+      // ============================================================
+
+      let currentController = null;
+
+      async function cancelableFetch(url) {
+        if (currentController) {
+          currentController.abort();
+        }
+        currentController = new AbortController();
+
+        try {
+          const response = await fetch(url, {
+            signal: currentController.signal,
+          });
+          return await response.json();
+        } catch (e) {
+          if (e.name === "AbortError") {
+            console.log("Fetch cancelled");
+            return null;
+          }
+          throw e;
+        }
+      }
+
+      // ============================================================
+      // Category 13: Event Bubbling/Capturing Race
+      // Based on: RClassify paper patterns
+      // ============================================================
+
+      let eventLog = [];
+
+      function logEvent(phase, target) {
+        eventLog.push({ phase: phase, target: target, time: Date.now() });
+      }
+
+      // ============================================================
+      // Category 14: Timer Race (setTimeout ordering)
+      // Based on: NodeRacer patterns
+      // ============================================================
+
+      let timerResults = [];
+
+      function startTimerRace() {
+        timerResults = [];
+
+        setTimeout(function () {
+          timerResults.push("A");
+        }, 10);
+        setTimeout(function () {
+          timerResults.push("B");
+        }, 10);
+        setTimeout(function () {
+          timerResults.push("C");
+        }, 10);
+
+        // Order of A, B, C is not guaranteed
+        return new Promise(function (resolve) {
+          setTimeout(function () {
+            resolve(timerResults);
+          }, 50);
+        });
+      }
+
+      // ============================================================
+      // Category 15: Callback Hell Race
+      // Based on: Legacy async patterns
+      // ============================================================
+
+      function nestedCallbackRace(callback) {
+        let result = 0;
+
+        setTimeout(function () {
+          result = 1;
+          setTimeout(function () {
+            result = result + 1; // May race with other callbacks
+            callback(result);
+          }, 10);
+        }, 10);
+
+        setTimeout(function () {
+          result = result * 2; // RACE: interleaves with above
+        }, 15);
+      }
+
+      // ============================================================
+      // Initialization
+      // ============================================================
+
+      // Start async initialization (may race with user interaction)
+      initializeForm();
+      setupClickHandler();
+      loadLibrary();
+
+      // Initialize storage
+      if (!localStorage.getItem(STORAGE_KEY)) {
+        localStorage.setItem(STORAGE_KEY, "0");
+      }
+
+      // ============================================================
+      // Event Handlers
+      // ============================================================
+
+      function handleInput() {
+        console.log("Input changed:", document.getElementById("input").value);
+      }
+
+      function handleSubmit() {
+        const username = document.getElementById("username").value;
+        const email = document.getElementById("email").value;
+        document.getElementById("formStatus").textContent =
+          "Submitted: " + username + " / " + email;
+        return false; // Prevent actual form submission
+      }
+
+      // ============================================================
+      // Test API (Global)
+      // ============================================================
+
+      window.raceTests = {
+        // State getters
+        getCount: function () {
+          return count;
+        },
+        getBalance: function () {
+          return balance;
+        },
+        getPromoUsed: function () {
+          return promoUsed;
+        },
+        getSharedState: function () {
+          return sharedState;
+        },
+
+        // Vulnerable operations
+        asyncInc: asyncInc,
+        asyncDec: asyncDec,
+        withdraw: withdraw,
+        applyPromoCode: applyPromoCode,
+        unsafeParallelIncrement: unsafeParallelIncrement,
+        incrementStorage: incrementStorage,
+        unsafeDOMUpdate: unsafeDOMUpdate,
+        optimisticUpdate: optimisticUpdate,
+
+        // Fixed operations
+        safeAsyncInc: safeAsyncInc,
+        safeSequentialIncrement: safeSequentialIncrement,
+        handleSearchFixed: handleSearchFixed,
+
+        // Utilities
+        reset: function () {
+          count = 0;
+          balance = 1000;
+          promoUsed = false;
+          sharedState = { value: 0, version: 0 };
+          updateDisplay();
+        },
+
+        // Test scenarios
+        testDoubleSpend: async function () {
+          balance = 100;
+          const results = await Promise.all([withdraw(100), withdraw(100)]);
+          // BUG: Both may succeed, balance becomes -100
+          return { balance: balance, results: results };
+        },
+
+        testPromoRace: async function () {
+          promoUsed = false;
+          const results = await Promise.all([
+            applyPromoCode("DISCOUNT20"),
+            applyPromoCode("DISCOUNT20"),
+          ]);
+          // BUG: Both may succeed, discount applied twice
+          return { results: results };
+        },
+
+        testParallelInc: async function (n) {
+          count = 0;
+          await unsafeParallelIncrement(n || 5);
+          // Expected: n, Actual: likely 1
+          return { expected: n || 5, actual: count };
+        },
+      };
+
+      console.log("Race Condition Test Suite loaded");
+      console.log("Use window.raceTests to run tests");
+    </script>
+  </body>
+</html>

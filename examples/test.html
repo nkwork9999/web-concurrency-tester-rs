@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head><title>test</title></head>
+<body>
+    <input type="text" id="input" oninput="validate()">
+    <button id="btn" onclick="submit()">送信</button>
+    <button id="inc" onclick="inc()">+</button>
+    <button id="dec" onclick="dec()">-</button>
+    <button id="dis" disabled onclick="danger()">無効</button>
+    <span id="count">0</span>
+    <script>
+        let count = 0;
+        async function inc() { const v = count; await delay(10); count = v + 1; }
+        async function dec() { const v = count; await delay(10); count = Math.max(v - 1, 0); }
+        function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+    </script>
+</body>
+</html>

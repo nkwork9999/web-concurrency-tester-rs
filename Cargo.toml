@@ -1,0 +1,60 @@
+[package]
+name = "web-concurrency-tester-rs"
+version = "0.1.0"
+edition = "2021"
+authors = ["nkwork9999 <your.email@example.com>"] # 必要に応じて変更
+description = "A deterministic concurrency testing tool for Web/JavaScript environments using DPOR and PCT."
+license = "MPL-2.0"
+repository = "https://github.com/nkwork9999/web-concurrency-tester-rs"
+readme = "README.md"
+keywords = ["testing", "concurrency", "web", "race-detection", "dpor"]
+categories = ["development-tools::testing", "web-programming", "simulation"]
+exclude = ["/test.html", "/.github", "/examples"] # パッケージサイズ削減
+
+[dependencies]
+# ========================================
+# 共通: パーサー
+# ========================================
+
+# JavaScript/TypeScript パーサー
+oxc_allocator = "0.30"
+oxc_parser = "0.30"
+oxc_ast = "0.30"
+oxc_span = "0.30"
+
+# HTML パーサー
+lol_html = "1.2"
+
+# 正規表現
+regex = "1.10"
+
+# 乱数
+rand = "0.8"
+
+# ========================================
+# JS実行エンジン
+# ========================================
+boa_engine = "0.18" # ※注: バージョンは依存関係に合わせて調整してください
+boa_gc = "0.18"
+
+# ========================================
+# 並行処理テスト用
+# ========================================
+proptest = "1.4"
+
+# ========================================
+# CLI / Utils
+# ========================================
+clap = { version = "4.4", features = ["derive"] }
+colored = "2.1"
+thiserror = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[dev-dependencies]
+pretty_assertions = "1.4"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

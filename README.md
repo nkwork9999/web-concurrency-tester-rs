@@ -1,5 +1,6 @@
 # web-concurrency-tester-rs 🦀🕸️
 
+[![Crates.io](https://img.shields.io/crates/v/web-concurrency-tester-rs.svg)](https://crates.io/crates/web-concurrency-tester-rs)
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
 [![Rust](https://img.shields.io/badge/built_with-Rust-orange.svg)](https://www.rust-lang.org)
 
@@ -16,19 +17,18 @@ It helps developers find hard-to-reproduce race conditions in DOM operations by 
   - **PCT**: Mathematically guaranteed bug detection probabilities for depth-bounded races.
 - **Embedded JS Engine**: Powered by `boa_engine` and `oxc_parser` for direct analysis and execution in Rust.
 
-## 🚀 Usage
+## 📦 Installation
 
-### 1. Prerequisites
-
-Ensure you have Rust and Cargo installed.
+You can install the tool directly from crates.io:
 
 ```bash
-git clone [https://github.com/nkwork9999/web-concurrency-tester-rs.git](https://github.com/nkwork9999/web-concurrency-tester-rs.git)
-cd web-concurrency-tester-rs
+cargo install web-concurrency-tester-rs
 
 ```
 
-### 2. Create a Test Case
+## 🚀 Usage
+
+### 1. Create a Test Case
 
 Create an HTML file (e.g., `test.html`) containing the JavaScript logic you want to verify.
 
@@ -47,9 +47,16 @@ Create an HTML file (e.g., `test.html`) containing the JavaScript logic you want
 </script>
 ```
 
-### 3. Run the Test
+### 2. Run the Test
 
-Run the tool targeting your HTML file. Using `--release` mode is recommended for performance.
+If you installed via cargo:
+
+```bash
+web-concurrency-tester-rs test.html
+
+```
+
+Or if you are running from the source code:
 
 ```bash
 cargo run --release -- test.html
@@ -71,3 +78,7 @@ The tool explores multiple execution schedules and reports any detected races:
 
 This project is licensed under the **Mozilla Public License 2.0 (MPL-2.0)**.
 See the [LICENSE](https://www.google.com/search?q=LICENSE) file for details.
+
+```
+
+```

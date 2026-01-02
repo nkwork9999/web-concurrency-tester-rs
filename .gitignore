@@ -1,0 +1,21 @@
+# --- Rust Build Artifacts (必須) ---
+/target/
+**/*.rs.bk
+
+# --- MacOS System Files ---
+.DS_Store
+
+# --- Editor / IDE Settings ---
+# VS Code
+.vscode/
+# IntelliJ / RustRover
+.idea/
+*.iml
+# Vim / Emacs
+*.swp
+*~
+
+# --- Project Specific ---
+# もしテストで生成されるログファイルなどがあれば追記
+debug.log
+test_output/
